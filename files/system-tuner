@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+
+BAT_PATH="/sys/class/power_supply/BAT0"
+AC_PATH="/sys/class/power_supply/AC"
+PIDFILE="/var/run/system-tuner.pid"
+
+STATE="default_mode"
+
+if [[ $EUID -ne 0 ]]; then
+   echo "[system-tuner] ERROR: This script must be run as root" >&2
+   exit 1
+fi
+
+echo $$ > "$PIDFILE"
+
+cleanup() {
+    echo "[system-tuner] Shutting down gracefully..."
+    rm -f "$PIDFILE"
+    exit 0
+}
+
+trap cleanup TERM INT QUIT HUP
+
+declare -A DEFAULTS
+while IFS='= ' read -r key val; do
+    [[ -n "$key" && "$key" != \#* ]] && DEFAULTS["$key"]="$val"
+done < /etc/sysctl.conf
+
+apply_performance_mode() {
+    echo "[system-tuner] Applying High Performance mode (AC + High Battery)..."
+    
+    # Network Optimizations
+    sysctl -w net.core.rmem_max=33554432 >/dev/null 2>&1
+    sysctl -w net.core.wmem_max=33554432 >/dev/null 2>&1
+    sysctl -w net.ipv4.tcp_rmem="4096 262144 33554432" >/dev/null 2>&1
+    sysctl -w net.ipv4.tcp_wmem="4096 262144 33554432" >/dev/null 2>&1
+    sysctl -w net.core.netdev_max_backlog=32768 >/dev/null 2>&1
+    sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1
+    
+    # Memory Management
+    sysctl -w vm.dirty_ratio=80 >/dev/null 2>&1
+    sysctl -w vm.dirty_background_ratio=50 >/dev/null 2>&1
+    sysctl -w vm.dirty_expire_centisecs=1500 >/dev/null 2>&1
+    sysctl -w vm.dirty_writeback_centisecs=1500 >/dev/null 2>&1
+    sysctl -w vm.vfs_cache_pressure=30 >/dev/null 2>&1
+    sysctl -w vm.page-cluster=0 >/dev/null 2>&1
+    sysctl -w vm.min_free_kbytes=262144 >/dev/null 2>&1
+    sysctl -w vm.compaction_proactiveness=10 >/dev/null 2>&1
+    sysctl -w vm.watermark_boost_factor=0 >/dev/null 2>&1
+    sysctl -w vm.watermark_scale_factor=5 >/dev/null 2>&1
+    sysctl -w vm.max_map_count=2097152 >/dev/null 2>&1
+    sysctl -w vm.stat_interval=300 >/dev/null 2>&1
+    sysctl -w vm.laptop_mode=0 >/dev/null 2>&1
+    
+    # Kernel Scheduler
+    sysctl -w kernel.sched_autogroup_enabled=1 >/dev/null 2>&1
+    sysctl -w kernel.timer_migration=1 >/dev/null 2>&1
+    sysctl -w kernel.sched_rt_runtime_us=990000 >/dev/null 2>&1
+    sysctl -w kernel.shmmax=34359738368 >/dev/null 2>&1
+    sysctl -w kernel.shmall=8388608 >/dev/null 2>&1
+    
+    STATE="performance_mode"
+}
+
+apply_power_save_mode() {
+    echo "[system-tuner] Applying Power Save mode (Critical Battery)..."
+
+    # Network
+    sysctl -w net.core.rmem_max=8388608 >/dev/null 2>&1
+    sysctl -w net.core.wmem_max=8388608 >/dev/null 2>&1
+    sysctl -w net.ipv4.tcp_rmem="4096 65536 8388608" >/dev/null 2>&1
+    sysctl -w net.ipv4.tcp_wmem="4096 65536 8388608" >/dev/null 2>&1
+    sysctl -w net.core.netdev_max_backlog=8192 >/dev/null 2>&1
+    sysctl -w net.ipv4.tcp_congestion_control=cubic >/dev/null 2>&1
+    
+    # Memory
+    sysctl -w vm.dirty_ratio=80 >/dev/null 2>&1
+    sysctl -w vm.dirty_background_ratio=50 >/dev/null 2>&1
+    sysctl -w vm.dirty_expire_centisecs=3000 >/dev/null 2>&1
+    sysctl -w vm.dirty_writeback_centisecs=3000 >/dev/null 2>&1
+    sysctl -w vm.vfs_cache_pressure=50 >/dev/null 2>&1
+    sysctl -w vm.page-cluster=0 >/dev/null 2>&1
+    sysctl -w vm.min_free_kbytes=65536 >/dev/null 2>&1
+    sysctl -w vm.extfrag_threshold=500 >/dev/null 2>&1
+    sysctl -w vm.compaction_proactiveness=10 >/dev/null 2>&1
+    sysctl -w vm.watermark_boost_factor=0 >/dev/null 2>&1
+    sysctl -w vm.watermark_scale_factor=20 >/dev/null 2>&1
+    sysctl -w vm.max_map_count=524288 >/dev/null 2>&1
+    sysctl -w vm.stat_interval=120 >/dev/null 2>&1
+    sysctl -w vm.laptop_mode=5 >/dev/null 2>&1
+    
+    # Kernel
+    sysctl -w kernel.sched_autogroup_enabled=1 >/dev/null 2>&1
+    sysctl -w kernel.timer_migration=1 >/dev/null 2>&1
+    sysctl -w kernel.sched_rt_runtime_us=950000 >/dev/null 2>&1
+    sysctl -w kernel.shmmax=4294967296 >/dev/null 2>&1
+    sysctl -w kernel.shmall=1048576 >/dev/null 2>&1
+
+    STATE="power_save_mode"
+}
+
+apply_default_mode() {
+    echo "[system-tuner] Restoring DEFAULT mode (balanced operation)..."
+    for key in "${!DEFAULTS[@]}"; do
+        sysctl -w "$key=${DEFAULTS[$key]}" >/dev/null 2>&1
+    done
+    STATE="default_mode"
+}
+
+is_shutting_down() {
+    pgrep -x "shutdown\|halt\|reboot\|poweroff" >/dev/null 2>&1 && return 0
+    if command -v runlevel >/dev/null 2>&1; then
+        local current_runlevel=$(runlevel 2>/dev/null | cut -d' ' -f2)
+        [[ "$current_runlevel" == "0" || "$current_runlevel" == "6" ]] && return 0
+    fi
+    [[ ! -r /proc/1/comm ]] && return 0
+    return 1
+}
+
+while true; do
+    if is_shutting_down; then
+        cleanup
+    fi
+    
+    if [[ -d "$BAT_PATH" && -d "$AC_PATH" ]]; then
+        CAPACITY=$(timeout 2 cat "$BAT_PATH/capacity" 2>/dev/null || echo "50")
+        STATUS=$(timeout 2 cat "$AC_PATH/online" 2>/dev/null || echo "1")
+        
+        if [[ ! "$CAPACITY" =~ ^[0-9]+$ ]]; then
+            CAPACITY=50
+        fi
+        if [[ ! "$STATUS" =~ ^[01]$ ]]; then
+            STATUS=1
+        fi
+
+        if [[ "$CAPACITY" -le 10 && "$STATE" != "power_save_mode" ]]; then
+            apply_power_save_mode
+        elif [[ "$STATUS" == "1" && "$CAPACITY" -ge 85 && "$STATE" != "performance_mode" && "$CAPACITY" -gt 10 ]]; then
+            apply_performance_mode
+        elif [[ ("$STATUS" == "0" || "$CAPACITY" -lt 85) && "$CAPACITY" -gt 10 && "$STATE" != "default_mode" ]]; then
+            apply_default_mode
+        fi
+    fi
+    
+    sleep 30 &
+    wait $!
+done
