@@ -29,6 +29,7 @@ done < /etc/sysctl.conf
 apply_performance_mode() {
     echo "[system-tuner Applying HIGH PERFORMANCE mode (Maximum RAM usage)..."
     
+    # Network: Larger buffers for more data in RAM
     sysctl -w net.core.rmem_max=33554432 >/dev/null 2>&1
     sysctl -w net.core.wmem_max=33554432 >/dev/null 2>&1
     sysctl -w net.ipv4.tcp_rmem="4096 262144 33554432" >/dev/null 2>&1
@@ -36,27 +37,31 @@ apply_performance_mode() {
     sysctl -w net.core.netdev_max_backlog=32768 >/dev/null 2>&1
     sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1
     
-    sysctl -w vm.dirty_ratio=60 >/dev/null 2>&1
-    sysctl -w vm.dirty_background_ratio=20 >/dev/null 2>&1
-    sysctl -w vm.dirty_expire_centisecs=30000 >/dev/null 2>&1
-    sysctl -w vm.dirty_writeback_centisecs=15000 >/dev/null 2>&1
+    # Memory: Keep MORE data in RAM, delay writes even longer
+    sysctl -w vm.dirty_ratio=80 >/dev/null 2>&1
+    sysctl -w vm.dirty_background_ratio=25 >/dev/null 2>&1
+    sysctl -w vm.dirty_expire_centisecs=60000 >/dev/null 2>&1
+    sysctl -w vm.dirty_writeback_centisecs=30000 >/dev/null 2>&1
     
-    sysctl -w vm.vfs_cache_pressure=50 >/dev/null 2>&1
+    # Memory: AGGRESSIVELY cache filesystem metadata (lower = more caching)
+    sysctl -w vm.vfs_cache_pressure=5 >/dev/null 2>&1
     sysctl -w vm.page-cluster=5 >/dev/null 2>&1
     sysctl -w vm.min_free_kbytes=262144 >/dev/null 2>&1
     
-    sysctl -w vm.compaction_proactiveness=80 >/dev/null 2>&1
-    sysctl -w vm.watermark_boost_factor=15000 >/dev/null 2>&1
-    sysctl -w vm.watermark_scale_factor=10 >/dev/null 2>&1
-    sysctl -w vm.max_map_count=134217728 >/dev/null 2>&1
-    sysctl -w vm.stat_interval=1 >/dev/null 2>&1
+    # Memory: Less aggressive memory management (more stays in RAM)
+    sysctl -w vm.compaction_proactiveness=10 >/dev/null 2>&1
+    sysctl -w vm.watermark_boost_factor=0 >/dev/null 2>&1
+    sysctl -w vm.watermark_scale_factor=5 >/dev/null 2>&1
+    sysctl -w vm.max_map_count=2097152 >/dev/null 2>&1
+    sysctl -w vm.stat_interval=300 >/dev/null 2>&1
     sysctl -w vm.laptop_mode=0 >/dev/null 2>&1
     
+    # Kernel: More shared memory available
     sysctl -w kernel.sched_autogroup_enabled=1 >/dev/null 2>&1
-    sysctl -w kernel.timer_migration=0 >/dev/null 2>&1
+    sysctl -w kernel.timer_migration=1 >/dev/null 2>&1
     sysctl -w kernel.sched_rt_runtime_us=990000 >/dev/null 2>&1
-    sysctl -w kernel.shmmax=17179869184 >/dev/null 2>&1
-    sysctl -w kernel.shmall=4194304 >/dev/null 2>&1
+    sysctl -w kernel.shmmax=34359738368 >/dev/null 2>&1 
+    sysctl -w kernel.shmall=8388608 >/dev/null 2>&1 
     
     STATE="performance_mode"
 }
@@ -64,6 +69,7 @@ apply_performance_mode() {
 apply_power_save_mode() {
     echo "[system-tuner Applying POWER SAVE mode (Minimal RAM usage, data protection)..."
 
+    # Network: Smaller buffers
     sysctl -w net.core.rmem_max=8388608 >/dev/null 2>&1
     sysctl -w net.core.wmem_max=8388608 >/dev/null 2>&1
     sysctl -w net.ipv4.tcp_rmem="4096 65536 8388608" >/dev/null 2>&1
@@ -71,11 +77,13 @@ apply_power_save_mode() {
     sysctl -w net.core.netdev_max_backlog=8192 >/dev/null 2>&1
     sysctl -w net.ipv4.tcp_congestion_control=cubic >/dev/null 2>&1
     
+    # Memory: Flush data quickly to prevent loss on battery death
     sysctl -w vm.dirty_ratio=10 >/dev/null 2>&1
     sysctl -w vm.dirty_background_ratio=5 >/dev/null 2>&1
     sysctl -w vm.dirty_expire_centisecs=3000 >/dev/null 2>&1
     sysctl -w vm.dirty_writeback_centisecs=1500 >/dev/null 2>&1
     
+    # Memory: Aggressively evict caches to save power
     sysctl -w vm.vfs_cache_pressure=150 >/dev/null 2>&1
     sysctl -w vm.page-cluster=0 >/dev/null 2>&1
     sysctl -w vm.min_free_kbytes=65536 >/dev/null 2>&1
@@ -86,7 +94,7 @@ apply_power_save_mode() {
     sysctl -w vm.watermark_scale_factor=20 >/dev/null 2>&1
     sysctl -w vm.max_map_count=524288 >/dev/null 2>&1
     sysctl -w vm.stat_interval=120 >/dev/null 2>&1
-    sysctl -w vm.laptop_mode=5 >/dev/null 2>&1
+    sysctl -w vm.laptop_mode=5 >/dev/null 2>&1 
     
     sysctl -w kernel.sched_autogroup_enabled=1 >/dev/null 2>&1
     sysctl -w kernel.timer_migration=1 >/dev/null 2>&1
