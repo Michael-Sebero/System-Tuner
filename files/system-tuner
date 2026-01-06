@@ -27,7 +27,7 @@ while IFS='= ' read -r key val; do
 done < /etc/sysctl.conf
 
 apply_performance_mode() {
-    echo "[system-tuner Applying HIGH PERFORMANCE mode (Maximum RAM usage)..."
+    echo "[system-tuner Applying High Performance mode..."
     
     # Network: Larger buffers for more data in RAM
     sysctl -w net.core.rmem_max=33554432 >/dev/null 2>&1
@@ -37,13 +37,13 @@ apply_performance_mode() {
     sysctl -w net.core.netdev_max_backlog=32768 >/dev/null 2>&1
     sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1
     
-    # Memory: Keep MORE data in RAM, delay writes even longer
+    # Memory: Keep more data in RAM, delay writes even longer
     sysctl -w vm.dirty_ratio=80 >/dev/null 2>&1
     sysctl -w vm.dirty_background_ratio=25 >/dev/null 2>&1
     sysctl -w vm.dirty_expire_centisecs=60000 >/dev/null 2>&1
     sysctl -w vm.dirty_writeback_centisecs=30000 >/dev/null 2>&1
     
-    # Memory: AGGRESSIVELY cache filesystem metadata (lower = more caching)
+    # Memory: Aggressively cache filesystem metadata (lower = more caching)
     sysctl -w vm.vfs_cache_pressure=5 >/dev/null 2>&1
     sysctl -w vm.page-cluster=5 >/dev/null 2>&1
     sysctl -w vm.min_free_kbytes=262144 >/dev/null 2>&1
@@ -67,7 +67,7 @@ apply_performance_mode() {
 }
 
 apply_power_save_mode() {
-    echo "[system-tuner Applying POWER SAVE mode (Minimal RAM usage, data protection)..."
+    echo "[system-tuner Applying Power Save mode..."
 
     # Network: Smaller buffers
     sysctl -w net.core.rmem_max=8388608 >/dev/null 2>&1
